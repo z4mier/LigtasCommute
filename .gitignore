@@ -1,0 +1,25 @@
+\# Laravel
+/vendor/
+/node_modules/
+/public/storage
+/storage/*.key
+.env
+.env.*.backup
+.phpunit.result.cache
+
+# Flutter (if you have ligtascommute_app)
+/ligtascommute_app/.dart_tool/
+/ligtascommute_app/build/
+/ligtascommute_app/ios/Pods/
+/ligtascommute_app/android/.gradle/
+/ligtascommute_app/android/app/{debug,profile,release}
+/ligtascommute_app/.flutter-plugins
+/ligtascommute_app/.flutter-plugins-dependencies
+/ligtascommute_app/pubspec.lock
+
+# IDE/OS
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
