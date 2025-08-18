@@ -1,8 +1,3 @@
-# LigtasCommute  
-**Enhancing Commuter Safety and Experience in Cebu**
-
----
-
 ## **Overview**
 LigtasCommute is a capstone project developed by BSIT students from the **University of Cebu – Main Campus**.  
 It is a **mobile and web-based system** designed to improve the safety, reliability, and convenience of long-distance commuting in Cebu, Philippines.
