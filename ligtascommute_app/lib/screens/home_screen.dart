@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'settings_screen.dart';
+import '../services/my_settings_actions.dart';
+
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -16,7 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final pages = [
       const _HomeTab(),
       const _QrTab(),
-      const _SettingsTab(),
+      SettingsScreen(actions: MySettingsActions()),
     ];
 
     return Scaffold(

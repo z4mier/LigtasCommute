@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'otp_screen.dart';
 import 'signup_screen.dart';
@@ -23,8 +24,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool isResetLoading = false;
   bool _obscurePassword = true;
 
-  // ---- helpers --------------------------------------------------------------
-
   Map<String, dynamic> _safeMap(String body) {
     try {
       final v = jsonDecode(body);
@@ -36,20 +35,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   bool _isVerifiedFromResponse(Map<String, dynamic> data) {
-    // { user: { is_verified: true/1 } } or { user: { email_verified_at: "..." } }
     final user = (data['user'] is Map) ? data['user'] as Map : null;
     if (user != null) {
       if (user['is_verified'] == true || user['is_verified'] == 1) return true;
       if (user['email_verified_at'] != null &&
           user['email_verified_at'].toString().isNotEmpty) return true;
     }
-
-    // flat shapes
     if (data['is_verified'] == true || data['is_verified'] == 1) return true;
     if (data['email_verified_at'] != null &&
         data['email_verified_at'].toString().isNotEmpty) return true;
 
-    // { data: { user: {...} } }
     final innerData = (data['data'] is Map) ? data['data'] as Map : null;
     final innerUser = (innerData?['user'] is Map) ? innerData!['user'] as Map : null;
     if (innerUser != null) {
@@ -59,8 +54,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     return false;
   }
-
-  // ---- actions --------------------------------------------------------------
 
   Future<void> loginUser() async {
     final email = emailController.text.trim();
@@ -90,16 +83,27 @@ class _LoginScreenState extends State<LoginScreen> {
       final data = isJson ? _safeMap(res.body) : <String, dynamic>{};
 
       if (res.statusCode == 200) {
-        // a) backend explicitly tells us to verify
+        // Save token if present
+        String? token;
+        if (data['token'] != null) token = data['token'].toString();
+        else if (data['access_token'] != null) token = data['access_token'].toString();
+        else if (data['data'] is Map && data['data']['token'] != null) {
+          token = data['data']['token'].toString();
+        }
+        if (token != null && token.isNotEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('auth_token', token);
+        }
+
+        // Requires verification?
         if (data['requires_verification'] == true) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => OtpScreen(email: email)),
-          );
+          if (!mounted) return;
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => OtpScreen(email: email),
+          ));
           return;
         }
 
-        // b) infer from payload
         final verified =
             _isVerifiedFromResponse(data) ||
             (() {
@@ -108,7 +112,6 @@ class _LoginScreenState extends State<LoginScreen> {
             }());
 
         if (verified) {
-          // Optionally store token: final token = data['token']?.toString();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Logged in successfully")),
@@ -120,7 +123,8 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
 
-        // c) fallback → treat as unverified
+        // Fallback: go to OTP
+        if (!mounted) return;
         Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => OtpScreen(email: email)),
@@ -128,7 +132,6 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // Non-200
       final msg = data['message']?.toString();
       final preview = isJson
           ? (msg ?? 'Login failed')
@@ -256,8 +259,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // ---- UI helpers -----------------------------------------------------------
-
   InputDecoration _inputDecoration({
     required String label,
     required String hint,
@@ -286,8 +287,6 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-
-  // ---- build ---------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {

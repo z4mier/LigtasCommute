@@ -11,7 +11,6 @@ return new class extends Migration {
             // change otp to fixed length
             $table->char('otp', 6)->change();                 // requires doctrine/dbal
             // add an index to expires_at
-            $table->index('expires_at', 'otps_expires_at_index');
         });
     }
 
