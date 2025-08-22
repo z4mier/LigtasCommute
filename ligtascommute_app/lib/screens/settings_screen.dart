@@ -131,8 +131,8 @@ abstract class SettingsActions {
   Future<void> changeLanguage(String code); // "en", "tl", "ceb"
   Future<void> toggleDarkMode(bool enabled);
   Future<void> redeemRewards();
-  Future<void> openTerms();
-  Future<void> openHelp();
+  Future<void> openTerms(); // (kept for compatibility, not used here)
+  Future<void> openHelp();  // (kept for compatibility, not used here)
   Future<void> logout();
   bool get isDarkMode;
   String get languageCode;
@@ -307,9 +307,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SectionCard(
                 child: Column(
                   children: [
-                    _LinkTile(label: 'Terms & Privacy', onTap: () async => widget.actions.openTerms()),
+                    _LinkTile(
+                      label: 'Terms & Privacy',
+                      onTap: () async {
+                        await showDialog<void>(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (_) => const _TermsPrivacyDialog(),
+                        );
+                      },
+                    ),
                     const Divider(height: 1),
-                    _LinkTile(label: 'Help & Support', onTap: () async => widget.actions.openHelp()),
+                    _LinkTile(
+                      label: 'Help & Support',
+                      onTap: () async {
+                        await showDialog<void>(
+                          context: context,
+                          barrierDismissible: true,
+                          builder: (_) => const _HelpSupportDialog(),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -455,7 +473,7 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   Widget build(BuildContext context) {
     final ts = GoogleFonts.poppins();
     return Dialog(
-      backgroundColor: Colors.white, // white like first pic
+      backgroundColor: Colors.white,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
@@ -474,7 +492,6 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               ),
               const SizedBox(height: 4),
 
-              // Avatar + Name (NO email under avatar)
               CircleAvatar(
                 radius: 40,
                 backgroundColor: kPrimaryDark,
@@ -485,7 +502,6 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               Text(_user.fullName, style: ts.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
               const SizedBox(height: 14),
 
-              // Personal Information card (white with border) – email inside
               Container(
                 decoration: _cardDeco(),
                 padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
@@ -512,7 +528,6 @@ class _ProfileDialogState extends State<_ProfileDialog> {
                     ),
                     const SizedBox(height: 4),
 
-                    // Email first row
                     _InfoRow(icon: Icons.email_outlined, text: _user.email),
 
                     if (_user.phone != null) ...[
@@ -533,7 +548,6 @@ class _ProfileDialogState extends State<_ProfileDialog> {
               ),
               const SizedBox(height: 12),
 
-              // Security section → Manage Password ONLY
               Container(
                 width: double.infinity,
                 decoration: _cardDeco(),
@@ -576,7 +590,6 @@ class _ProfileDialogState extends State<_ProfileDialog> {
     return take(parts.first) + take(parts.last);
   }
 
-  // White card + light border
   BoxDecoration _cardDeco() => BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
@@ -615,7 +628,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// --- Edit Profile dialog (unchanged) ---
+// --- Edit Profile dialog ---
 class _EditProfileDialog extends StatefulWidget {
   final AppUser user;
   final SettingsActions actions;
@@ -683,7 +696,6 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                       style: ts.copyWith(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 22)),
                 ),
 
-                /// Plain email text (no box) under the avatar
                 const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -701,7 +713,6 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                 ),
                 const SizedBox(height: 14),
 
-                // Personal Information panel with Full Name first
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -780,7 +791,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     try {
       final updated = await widget.actions.updateProfile(
         fullName: _name.text.trim(),
-        email: widget.user.email, // keep existing email unchanged
+        email: widget.user.email,
         phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         location: _location.text.trim().isEmpty ? null : _location.text.trim(),
       );
@@ -914,7 +925,7 @@ class _UsernameOnlyDialogState extends State<_UsernameOnlyDialog> {
   }
 }
 
-/// Password dialog (unchanged)
+/// Password dialog
 class _PasswordOnlyDialog extends StatefulWidget {
   final SettingsActions actions;
   const _PasswordOnlyDialog({required this.actions});
@@ -1272,6 +1283,299 @@ class _ErrorRetry extends StatelessWidget {
         const SizedBox(height: 8),
         OutlinedButton(style: kOutlinedBtnStyle, onPressed: onRetry, child: const Text('Retry')),
       ]),
+    );
+  }
+}
+
+/// =======================
+/// Terms & Privacy (two-page) dialog
+/// =======================
+class _TermsPrivacyDialog extends StatefulWidget {
+  const _TermsPrivacyDialog();
+
+  @override
+  State<_TermsPrivacyDialog> createState() => _TermsPrivacyDialogState();
+}
+
+class _TermsPrivacyDialogState extends State<_TermsPrivacyDialog> {
+  final _page = PageController();
+  bool _accepted = false;
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _page.dispose();
+    super.dispose();
+  }
+
+  TextStyle get _title => GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16);
+  TextStyle get _sub => GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13);
+  TextStyle get _p => GoogleFonts.poppins(height: 1.35, fontSize: 13);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 640),
+        child: Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 6, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('LigtasCommute Terms and Privacy', style: _title),
+                        const SizedBox(height: 2),
+                        Text('Last Updated: June 17, 2025',
+                            style: GoogleFonts.poppins(color: Colors.black54, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+
+            // Body
+            Expanded(
+              child: PageView(
+                controller: _page,
+                onPageChanged: (i) => setState(() => _index = i),
+                children: [
+                  _pageOne(),
+                  _pageTwo(),
+                ],
+              ),
+            ),
+
+            // Footer actions
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Row(
+                children: [
+                  if (_index == 1)
+                    TextButton(
+                      onPressed: () => _page.previousPage(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOut,
+                      ),
+                      child: const Text('Back'),
+                    )
+                  else
+                    const SizedBox.shrink(),
+                  const Spacer(),
+                  if (_index == 0)
+                    ElevatedButton(
+                      style: kPrimaryBtnStyle.copyWith(
+                        minimumSize: const WidgetStatePropertyAll(Size(88, 44)),
+                      ),
+                      onPressed: () => _page.nextPage(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOut,
+                      ),
+                      child: const Text('Next'),
+                    )
+                  else
+                    ElevatedButton(
+                      style: kPrimaryBtnStyle.copyWith(
+                        minimumSize: const WidgetStatePropertyAll(Size(88, 44)),
+                      ),
+                      onPressed: _accepted ? () => Navigator.pop(context) : null,
+                      child: const Text('OK'),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pageOne() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Welcome to LigtasCommute! By using this app, you agree to the following terms and conditions. Please read them carefully before using our services.',
+              style: _p),
+          const SizedBox(height: 12),
+          _num('1. Acceptance of Terms',
+              'By accessing or using LigtasCommute, you acknowledge that you have read, understood, and agree to these Terms and Conditions. If you do not agree with any part of these terms, please do not use the application.'),
+          _num('2. User Registration',
+              'To use some features, you need an account. Provide accurate info and keep it updated. You’re responsible for keeping your login details secure.'),
+          _num('3. Location and GPS Use',
+              'LigtasCommute uses GPS and mobile data to track your trip and send alerts. By using the app, you allow location access. If offline, your last known location may be sent via SMS to your emergency contacts.'),
+          _num('4. QR Code Verification',
+              'Scan the vehicle’s QR code before boarding. Always confirm the driver and vehicle match in person.'),
+        ],
+      ),
+    );
+  }
+
+  Widget _pageTwo() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _num('5. Safety & Emergency Features',
+              'You may use the emergency alert function when you feel unsafe. Misuse of this feature, including sending false alerts, may result in account suspension or other actions.'),
+          _num('6. Feedback & Reports',
+              'LigtasCommute allows you to report your commuting experience. By submitting feedback, you agree to use appropriate language and submit only honest, respectful reports.'),
+          _num('7. Privacy Policy',
+              'We collect your name, contact number, GPS data, trip activity, and feedback to make the app work properly. Your data is stored securely and not shared with advertisers. You may request to update or delete your data anytime.'),
+          _num('8. Changes to Terms',
+              'We may revise these terms at any time. Continued use after updates means you accept the new terms.'),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Checkbox(
+                value: _accepted,
+                onChanged: (v) => setState(() => _accepted = v ?? false),
+              ),
+              Expanded(
+                child: Text(
+                  'I have read and accept the Terms and Privacy Policy.',
+                  style: _p,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _num(String h, String b) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(h, style: _sub),
+        const SizedBox(height: 4),
+        Text(b, style: _p),
+      ]),
+    );
+  }
+}
+
+/// =======================
+/// Help & Support dialog
+/// =======================
+class _HelpSupportDialog extends StatelessWidget {
+  const _HelpSupportDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final ts = GoogleFonts.poppins();
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 620),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 6, 8),
+              child: Row(
+                children: [
+                  Text('Help & Support',
+                      style: ts.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  children: [
+                    _helpCard(
+                      context,
+                      title: 'Troubleshooting',
+                      items: const [
+                        'Close and restart the CommuterSafe app',
+                        'Check your internet connection and try again',
+                        'Update to the latest version from the app store',
+                        'Restart your device and try opening the app again',
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _helpCard(
+                      context,
+                      title: 'Common Issues',
+                      items: const [
+                        'Can’t scan QR code? Try refreshing the app or checking camera permissions.',
+                        'Location not updating? Ensure GPS and mobile data are turned on.',
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: kPrimaryBtnStyle,
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _helpCard(BuildContext context, {required String title, required List<String> items}) {
+    final ts = GoogleFonts.poppins();
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: kBorderGray),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 2, offset: Offset(0, 1))],
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: ts.copyWith(fontWeight: FontWeight.w700, fontSize: 14)),
+          const SizedBox(height: 8),
+          for (final t in items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 7),
+                  child: Icon(Icons.circle, size: 6, color: Colors.black54),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(t, style: ts.copyWith(height: 1.35, fontSize: 13))),
+              ]),
+            ),
+        ],
+      ),
     );
   }
 }

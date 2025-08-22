@@ -1,16 +1,25 @@
 // lib/services/my_settings_actions.dart
 import 'dart:convert';
 import 'dart:io';
-import 'dart:async'; // <-- for TimeoutException
+import 'dart:async';
+import 'package:flutter/foundation.dart'; 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/settings_screen.dart';
 import '../api_config.dart';
 
-class MySettingsActions implements SettingsActions {
+class MySettingsActions with ChangeNotifier implements SettingsActions {
+  // Pref keys (kept same as your previous code)
+  static const String _kDarkKey = 'dark_mode';
+  static const String _kLangKey = 'language';
+
   bool _dark = false;
   String _lang = 'en';
+
+  MySettingsActions() {
+    _restorePrefs(); // load saved theme/lang on app start
+  }
 
   // ----- getters -----
   @override
@@ -21,6 +30,19 @@ class MySettingsActions implements SettingsActions {
   // ----- prefs helpers -----
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
   Future<String?> _getToken() async => (await _prefs()).getString('auth_token');
+
+  Future<void> _restorePrefs() async {
+    final p = await _prefs();
+    _dark = p.getBool(_kDarkKey) ?? false;
+    _lang = p.getString(_kLangKey) ?? 'en';
+    notifyListeners(); // rebuild MaterialApp with restored values
+  }
+
+  Future<void> _savePrefs() async {
+    final p = await _prefs();
+    await p.setBool(_kDarkKey, _dark);
+    await p.setString(_kLangKey, _lang);
+  }
 
   Map<String, String> _headers(String token) => {
         'Accept': 'application/json',
@@ -156,19 +178,19 @@ class MySettingsActions implements SettingsActions {
     }
   }
 
-  // ----- local prefs -----
+  // ----- local prefs (notify so MaterialApp rebuilds) -----
   @override
   Future<void> changeLanguage(String code) async {
     _lang = code;
-    final p = await _prefs();
-    await p.setString('language', code);
+    await _savePrefs();
+    notifyListeners();
   }
 
   @override
   Future<void> toggleDarkMode(bool enabled) async {
     _dark = enabled;
-    final p = await _prefs();
-    await p.setBool('dark_mode', enabled);
+    await _savePrefs();
+    notifyListeners();
   }
 
   // ----- Non-critical mock endpoints -----
