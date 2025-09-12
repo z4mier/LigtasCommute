@@ -1,13 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'otp_screen.dart';
 import 'signup_screen.dart';
-import 'home_screen.dart';
 import 'package:ligtascommute_app/api_config.dart';
+import 'terms_privacy_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -24,6 +24,56 @@ class _LoginScreenState extends State<LoginScreen> {
   bool isResetLoading = false;
   bool _obscurePassword = true;
 
+  bool _handledRouteArgs = false;
+
+  // === THEME COLORS ===
+  static const _aqua = Color(0xFF22D3EE); // light aqua/cyan accent
+  static const _aquaOverlay = Color(0x2622D3EE);
+  static const _darkNavyBg = Color(0xFF111827);
+  static const _headerTeal = Color(0xFF0D658B);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_handledRouteArgs) return;
+    _handledRouteArgs = true;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final showTerms = args['showTerms'] == true;
+      final email = (args['email'] as String?)?.trim() ?? '';
+
+      if (email.isNotEmpty) {
+        emailController.text = email;
+      }
+
+      if (showTerms) {
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          await _openTerms(email);
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openTerms(String email) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (termsCtx) => TermsPrivacyScreen(
+          email: email,
+          onAccepted: () => Navigator.of(termsCtx).pop(),
+        ),
+      ),
+    );
+  }
+
   Map<String, dynamic> _safeMap(String body) {
     try {
       final v = jsonDecode(body);
@@ -39,18 +89,25 @@ class _LoginScreenState extends State<LoginScreen> {
     if (user != null) {
       if (user['is_verified'] == true || user['is_verified'] == 1) return true;
       if (user['email_verified_at'] != null &&
-          user['email_verified_at'].toString().isNotEmpty) return true;
+          user['email_verified_at'].toString().isNotEmpty) {
+        return true;
+      }
     }
     if (data['is_verified'] == true || data['is_verified'] == 1) return true;
     if (data['email_verified_at'] != null &&
         data['email_verified_at'].toString().isNotEmpty) return true;
 
     final innerData = (data['data'] is Map) ? data['data'] as Map : null;
-    final innerUser = (innerData?['user'] is Map) ? innerData!['user'] as Map : null;
+    final innerUser =
+        (innerData?['user'] is Map) ? innerData!['user'] as Map : null;
     if (innerUser != null) {
-      if (innerUser['is_verified'] == true || innerUser['is_verified'] == 1) return true;
+      if (innerUser['is_verified'] == true || innerUser['is_verified'] == 1) {
+        return true;
+      }
       if (innerUser['email_verified_at'] != null &&
-          innerUser['email_verified_at'].toString().isNotEmpty) return true;
+          innerUser['email_verified_at'].toString().isNotEmpty) {
+        return true;
+      }
     }
     return false;
   }
@@ -83,11 +140,12 @@ class _LoginScreenState extends State<LoginScreen> {
       final data = isJson ? _safeMap(res.body) : <String, dynamic>{};
 
       if (res.statusCode == 200) {
-        // Save token if present
         String? token;
-        if (data['token'] != null) token = data['token'].toString();
-        else if (data['access_token'] != null) token = data['access_token'].toString();
-        else if (data['data'] is Map && data['data']['token'] != null) {
+        if (data['token'] != null) {
+          token = data['token'].toString();
+        } else if (data['access_token'] != null) {
+          token = data['access_token'].toString();
+        } else if (data['data'] is Map && data['data']['token'] != null) {
           token = data['data']['token'].toString();
         }
         if (token != null && token.isNotEmpty) {
@@ -95,20 +153,20 @@ class _LoginScreenState extends State<LoginScreen> {
           await prefs.setString('auth_token', token);
         }
 
-        // Requires verification?
         if (data['requires_verification'] == true) {
           if (!mounted) return;
-          Navigator.push(context, MaterialPageRoute(
-            builder: (_) => OtpScreen(email: email),
-          ));
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => OtpScreen(email: email)),
+          );
           return;
         }
 
-        final verified =
-            _isVerifiedFromResponse(data) ||
+        final verified = _isVerifiedFromResponse(data) ||
             (() {
               final u = data['user'];
-              return u is Map && (u['is_verified'] == 1 || u['is_verified'] == true);
+              return u is Map &&
+                  (u['is_verified'] == 1 || u['is_verified'] == true);
             }());
 
         if (verified) {
@@ -116,14 +174,10 @@ class _LoginScreenState extends State<LoginScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Logged in successfully")),
           );
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
-          );
+          Navigator.pushReplacementNamed(context, '/home');
           return;
         }
 
-        // Fallback: go to OTP
         if (!mounted) return;
         Navigator.push(
           context,
@@ -136,13 +190,43 @@ class _LoginScreenState extends State<LoginScreen> {
       final preview = isJson
           ? (msg ?? 'Login failed')
           : 'HTTP ${res.statusCode} ${res.reasonPhrase}\n'
-            '${res.body.substring(0, res.body.length > 200 ? 200 : res.body.length)}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(preview)));
+              '${res.body.substring(0, res.body.length > 200 ? 200 : res.body.length)}';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(preview)));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  // === InputDecoration WITHOUT floating labels ===
+  InputDecoration _inputDecoration({
+    required String hint,
+    required IconData icon,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      filled: true,
+      fillColor: Colors.white,
+      hintText: hint,
+      hintStyle: GoogleFonts.poppins(color: Colors.black45, fontSize: 13.5),
+
+      // no labelText, no floatingLabelStyle → floating label removed
+      prefixIcon: Icon(icon, color: Colors.black54),
+      suffixIcon: suffix,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Colors.transparent),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: _aqua, width: 1.7),
+      ),
+    );
   }
 
   Future<void> _openForgotPasswordDialog() async {
@@ -158,7 +242,8 @@ class _LoginScreenState extends State<LoginScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             title: Text(
               "Reset Password",
-              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600),
+              style: GoogleFonts.poppins(
+                  color: Colors.white, fontWeight: FontWeight.w600),
             ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -168,20 +253,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 14),
-                TextField(
-                  controller: forgotEmailController,
-                  keyboardType: TextInputType.emailAddress,
-                  style: GoogleFonts.poppins(color: Colors.black, fontSize: 14),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.white,
-                    hintText: "you@example.com",
-                    labelText: "Email Address",
-                    labelStyle: GoogleFonts.poppins(color: Colors.black87),
-                    prefixIcon: const Icon(Icons.email_outlined, color: Colors.black54),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide.none,
+                // Label above field (white), no floating label
+                _LabeledField(
+                  label: "Email Address",
+                  labelColor: Colors.white,
+                  child: TextField(
+                    controller: forgotEmailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: GoogleFonts.poppins(color: Colors.black, fontSize: 14),
+                    decoration: _inputDecoration(
+                      hint: "you@example.com",
+                      icon: Icons.email_outlined,
                     ),
                   ),
                 ),
@@ -190,12 +272,16 @@ class _LoginScreenState extends State<LoginScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: Text("Cancel", style: GoogleFonts.poppins(color: Colors.white70)),
+                child: Text("Cancel",
+                    style: GoogleFonts.poppins(color: Colors.white70)),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0D658B),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  backgroundColor: _headerTeal,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ).copyWith(
+                  overlayColor: const WidgetStatePropertyAll(_aquaOverlay),
                 ),
                 onPressed: isResetLoading
                     ? null
@@ -218,9 +304,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? const SizedBox(
                         height: 18,
                         width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
-                    : Text("Send reset", style: GoogleFonts.poppins(color: Colors.white)),
+                    : Text("Send reset",
+                        style: GoogleFonts.poppins(color: Colors.white)),
               ),
             ],
           );
@@ -233,7 +321,10 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}forgot-password'),
-        headers: const {"Content-Type": "application/json", "Accept": "application/json"},
+        headers: const {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
         body: jsonEncode({"email": email}),
       );
 
@@ -242,65 +333,35 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["message"]?.toString() ?? "Reset link sent. Please check your email.")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(data["message"]?.toString() ??
+                "Reset link sent. Please check your email.")));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["message"]?.toString() ?? "Could not start password reset")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(data["message"]?.toString() ??
+                "Could not start password reset")));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e")),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Error: $e")));
       }
     }
-  }
-
-  InputDecoration _inputDecoration({
-    required String label,
-    required String hint,
-    required IconData icon,
-    Widget? suffix,
-  }) {
-    return InputDecoration(
-      filled: true,
-      fillColor: Colors.white,
-      hintText: hint,
-      labelText: label,
-      labelStyle: GoogleFonts.poppins(color: Colors.black87),
-      prefixIcon: Icon(icon, color: Colors.black54),
-      suffixIcon: suffix,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide.none,
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF111827),
+      backgroundColor: _darkNavyBg,
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Top header
+            // Header
             Container(
               height: 250,
               width: double.infinity,
               decoration: const BoxDecoration(
-                color: Color(0xFF0D658B),
+                color: _headerTeal,
                 borderRadius: BorderRadius.only(
                   bottomLeft: Radius.circular(150),
                   bottomRight: Radius.circular(150),
@@ -313,7 +374,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 10),
                   Text(
                     "LigtasCommute",
-                    style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: GoogleFonts.poppins(
+                        fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   Text(
                     "Safety that rides with you",
@@ -327,43 +389,53 @@ class _LoginScreenState extends State<LoginScreen> {
             // Title
             Text(
               "Login",
-              style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+              style: GoogleFonts.poppins(
+                  fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             const SizedBox(height: 30),
 
-            // Inputs + Actions
+            // Form
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 children: [
-                  TextField(
-                    controller: emailController,
-                    style: GoogleFonts.poppins(fontSize: 14),
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: _inputDecoration(
-                      label: "Email Address",
-                      hint: "Enter your email",
-                      icon: Icons.email_outlined,
-                    ),
-                  ),
-                  const SizedBox(height: 15),
-                  TextField(
-                    controller: passwordController,
-                    obscureText: _obscurePassword,
-                    style: GoogleFonts.poppins(fontSize: 14),
-                    decoration: _inputDecoration(
-                      label: "Password",
-                      hint: "Enter your password",
-                      icon: Icons.lock_outline,
-                      suffix: IconButton(
-                        icon: Icon(
-                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                          color: Colors.black54,
-                        ),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  // Email (label above, white)
+                  _LabeledField(
+                    label: "Email Address",
+                    child: TextField(
+                      controller: emailController,
+                      style: GoogleFonts.poppins(fontSize: 14),
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: _inputDecoration(
+                        hint: "Enter your email",
+                        icon: Icons.email_outlined,
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+
+                  // Password (label above, white)
+                  _LabeledField(
+                    label: "Password",
+                    child: TextField(
+                      controller: passwordController,
+                      obscureText: _obscurePassword,
+                      style: GoogleFonts.poppins(fontSize: 14),
+                      decoration: _inputDecoration(
+                        hint: "Enter your password",
+                        icon: Icons.lock_outline,
+                        suffix: IconButton(
+                          icon: Icon(
+                            _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                            color: Colors.black54,
+                          ),
+                          onPressed: () =>
+                              setState(() => _obscurePassword = !_obscurePassword),
+                        ),
+                      ),
+                    ),
+                  ),
+
                   const SizedBox(height: 10),
 
                   Align(
@@ -382,11 +454,16 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 10),
 
+                  // Sign in button
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0D658B),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      backgroundColor: _headerTeal,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                       minimumSize: const Size(double.infinity, 50),
+                      elevation: 0,
+                    ).copyWith(
+                      overlayColor: const WidgetStatePropertyAll(_aquaOverlay),
                     ),
                     onPressed: isLoading ? null : loginUser,
                     child: isLoading
@@ -395,40 +472,107 @@ class _LoginScreenState extends State<LoginScreen> {
                             "Sign in",
                             style: GoogleFonts.poppins(
                               fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
                           ),
                   ),
                   const SizedBox(height: 20),
 
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const SignupScreen()),
-                      );
-                    },
-                    child: Text.rich(
-                      TextSpan(
-                        text: "Don’t have an account? ",
+                  // Sign up link (bold aqua + hover underline) — reuse AuthLink on SignUp for “Sign in”
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Don’t have an account? ",
                         style: GoogleFonts.poppins(color: Colors.white),
-                        children: [
-                          TextSpan(
-                            text: "Sign up",
-                            style: GoogleFonts.poppins(
-                              color: Colors.blue,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
                       ),
-                    ),
+                      AuthLink(
+                        text: "Sign up",
+                        onTap: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => const SignupScreen()),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Label above a field (no floating label)
+class _LabeledField extends StatelessWidget {
+  final String label;
+  final Widget child;
+  final Color labelColor;
+  const _LabeledField({
+    super.key,
+    required this.label,
+    required this.child,
+    this.labelColor = Colors.white,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            color: labelColor,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+}
+
+/// Reusable bold aqua link with hover underline.
+/// Use this on SignUp screen for “Sign in” to match styling.
+class AuthLink extends StatefulWidget {
+  final String text;
+  final VoidCallback onTap;
+  const AuthLink({super.key, required this.text, required this.onTap});
+
+  @override
+  State<AuthLink> createState() => _AuthLinkState();
+}
+
+class _AuthLinkState extends State<AuthLink> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final base = GoogleFonts.poppins(
+      color: _LoginScreenState._aqua,
+      fontWeight: FontWeight.w700, // BOLD
+    );
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 120),
+          style: base.copyWith(
+            decoration: _hovering ? TextDecoration.underline : TextDecoration.none,
+          ),
+          child: Text(widget.text),
         ),
       ),
     );

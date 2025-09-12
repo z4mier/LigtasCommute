@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Camera permission prompt -->
+	<key>NSCameraUsageDescription</key>
+	<string>We need camera access to scan driver QR codes.</string>
 </dict>
 </plist>

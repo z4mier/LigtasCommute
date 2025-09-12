@@ -25,33 +25,33 @@ class LigtasCommuteApp extends StatelessWidget {
           title: 'LigtasCommute',
           debugShowCheckedModeBanner: false,
 
-          // Light theme
           theme: ThemeData(
             useMaterial3: true,
             colorSchemeSeed: const Color(0xFF0F172A),
             brightness: Brightness.light,
             fontFamily: 'Poppins',
-            snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+            snackBarTheme:
+                const SnackBarThemeData(behavior: SnackBarBehavior.floating),
           ),
 
-          // Dark theme
           darkTheme: ThemeData(
             useMaterial3: true,
             colorSchemeSeed: const Color(0xFF0F172A),
             brightness: Brightness.dark,
             fontFamily: 'Poppins',
-            snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+            snackBarTheme:
+                const SnackBarThemeData(behavior: SnackBarBehavior.floating),
           ),
 
-          // Flip based on saved setting
-          themeMode: settingsActions.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          themeMode:
+              settingsActions.isDarkMode ? ThemeMode.dark : ThemeMode.light,
 
-          // App entry
+          // Entry
           home: const LoginScreen(),
 
-          // Named routes
+          // Named routes (note the actions passed to /home and /settings)
           routes: {
-            '/home': (_) => const HomeScreen(),
+            '/home': (_) => HomeScreen(actions: settingsActions),
             '/settings': (_) => SettingsScreen(actions: settingsActions),
             '/login': (_) => const LoginScreen(),
           },

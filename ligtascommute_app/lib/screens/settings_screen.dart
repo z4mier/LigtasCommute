@@ -27,24 +27,24 @@ ButtonStyle kOutlinedBtnStyle = OutlinedButton.styleFrom(
 );
 
 SnackBar kSnack(String msg) => SnackBar(
-  content: Text(msg),
-  backgroundColor: kPrimaryDark,
-  behavior: SnackBarBehavior.floating,
-);
+      content: Text(msg),
+      backgroundColor: kPrimaryDark,
+      behavior: SnackBarBehavior.floating,
+    );
 
 InputDecoration kInput(String label) => InputDecoration(
-  labelText: label,
-  isDense: true,
-  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-  enabledBorder: const OutlineInputBorder(
-    borderSide: BorderSide(color: kBorderGray),
-    borderRadius: BorderRadius.all(Radius.circular(10)),
-  ),
-  focusedBorder: const OutlineInputBorder(
-    borderSide: BorderSide(color: kPrimaryDark),
-    borderRadius: BorderRadius.all(Radius.circular(10)),
-  ),
-);
+      labelText: label,
+      isDense: true,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      enabledBorder: const OutlineInputBorder(
+        borderSide: BorderSide(color: kBorderGray),
+        borderRadius: BorderRadius.all(Radius.circular(10)),
+      ),
+      focusedBorder: const OutlineInputBorder(
+        borderSide: BorderSide(color: kPrimaryDark),
+        borderRadius: BorderRadius.all(Radius.circular(10)),
+      ),
+    );
 
 /// =======================
 /// Model
@@ -106,6 +106,15 @@ class AppUser {
 }
 
 /// =======================
+/// Global profile sync
+/// =======================
+/// Any screen can listen to ProfileSync.user to reflect updates instantly.
+class ProfileSync {
+  static final ValueNotifier<AppUser?> user = ValueNotifier<AppUser?>(null);
+  static void set(AppUser u) => user.value = u;
+}
+
+/// =======================
 /// Backend contract
 /// =======================
 abstract class SettingsActions {
@@ -132,7 +141,7 @@ abstract class SettingsActions {
   Future<void> toggleDarkMode(bool enabled);
   Future<void> redeemRewards();
   Future<void> openTerms(); // (kept for compatibility, not used here)
-  Future<void> openHelp();  // (kept for compatibility, not used here)
+  Future<void> openHelp(); // (kept for compatibility, not used here)
   Future<void> logout();
   bool get isDarkMode;
   String get languageCode;
@@ -158,7 +167,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _me = widget.actions.loadMe();
+    // Fill future and also push result into ProfileSync for global listeners.
+    _me = widget.actions.loadMe().then((u) {
+      ProfileSync.set(u);
+      return u;
+    });
     _dark = widget.actions.isDarkMode;
     _lang = widget.actions.languageCode;
   }
@@ -195,7 +208,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (snap.hasError || !snap.hasData) {
             return _ErrorRetry(
               message: 'Failed to load your profile.',
-              onRetry: () => setState(() => _me = widget.actions.loadMe()),
+              onRetry: () => setState(() {
+                _me = widget.actions.loadMe().then((u) {
+                  ProfileSync.set(u);
+                  return u;
+                });
+              }),
             );
           }
           final user = snap.data!;
@@ -205,12 +223,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _ProfileBox(
                 user: user,
                 onTap: () async {
+                  // Always open dialog seeded with the latest value if available
+                  final current = ProfileSync.user.value ?? user;
                   final updated = await showDialog<AppUser?>(
                     context: context,
                     barrierDismissible: true,
-                    builder: (_) => _ProfileDialog(user: user, actions: widget.actions),
+                    builder: (_) =>
+                        _ProfileDialog(user: current, actions: widget.actions),
                   );
                   if (updated != null && mounted) {
+                    // Update this screen AND broadcast to all tabs
+                    ProfileSync.set(updated);
                     setState(() => _me = Future.value(updated));
                   }
                 },
@@ -249,8 +272,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SectionHeader(icon: Icons.wb_sunny_outlined, title: 'Appearance'),
               _SectionCard(
                 child: ListTile(
-                  title: Text('Dark Mode', style: textStyle.copyWith(fontWeight: FontWeight.w500)),
-                  subtitle: Text('Switch to dark theme', style: textStyle.copyWith(fontSize: 12)),
+                  title: Text('Dark Mode',
+                      style: textStyle.copyWith(fontWeight: FontWeight.w500)),
+                  subtitle: Text('Switch to dark theme',
+                      style: textStyle.copyWith(fontSize: 12)),
                   trailing: Switch(
                     value: _dark,
                     onChanged: (v) async {
@@ -262,26 +287,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 12),
 
-              _SectionHeader(icon: Icons.emoji_events_outlined, title: 'Loyalty Rewards'),
+              _SectionHeader(
+                  icon: Icons.emoji_events_outlined, title: 'Loyalty Rewards'),
               _SectionCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Current Points',
-                        style: textStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 14)),
+                        style: textStyle.copyWith(
+                            fontWeight: FontWeight.w600, fontSize: 14)),
                     const SizedBox(height: 4),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         Text('${user.points}',
                             style: textStyle.copyWith(
-                                color: Colors.orange[800], fontSize: 18, fontWeight: FontWeight.w700)),
+                                color: Colors.orange[800],
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700)),
                         const SizedBox(width: 4),
                         Text('points', style: textStyle.copyWith(fontSize: 12)),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text('Earn points based on your ride', style: textStyle.copyWith(fontSize: 12)),
+                    Text('Earn points based on your ride',
+                        style: textStyle.copyWith(fontSize: 12)),
                     const SizedBox(height: 8),
                     _PointsBar(points: user.points, maxPoints: 100),
                     const SizedBox(height: 10),
@@ -292,8 +322,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onPressed: () async {
                           await widget.actions.redeemRewards();
                           if (mounted) {
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(kSnack('Redeem flow opened'));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                kSnack('Redeem flow opened'));
                           }
                         },
                         child: const Text('Redeem Rewards'),
@@ -336,11 +366,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SectionCard(
                 child: ListTile(
                   title: Text('Logout',
-                      style: textStyle.copyWith(color: Colors.red, fontWeight: FontWeight.w600)),
+                      style: textStyle.copyWith(
+                          color: Colors.red, fontWeight: FontWeight.w600)),
                   onTap: () async {
                     await widget.actions.logout();
                     if (mounted) {
-                      Navigator.of(context).pushNamedAndRemoveUntil('/login', (r) => false);
+                      Navigator.of(context)
+                          .pushNamedAndRemoveUntil('/login', (r) => false);
                     }
                   },
                 ),
@@ -357,7 +389,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _lang = code);
     await widget.actions.changeLanguage(code);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(kSnack('Language set to ${_langLabel(code)}'));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(kSnack('Language set to ${_langLabel(code)}'));
     }
   }
 
@@ -377,58 +410,68 @@ class _ProfileBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final textStyle = GoogleFonts.poppins();
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
+    // The box displays from ProfileSync so it auto-refreshes if updated elsewhere.
+    return ValueListenableBuilder<AppUser?>(
+      valueListenable: ProfileSync.user,
+      builder: (_, syncedUser, __) {
+        final u = syncedUser ?? user;
+        return InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE8E8E8)),
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.person_outline, color: kTextMain),
-                const SizedBox(width: 8),
-                Text('Profile',
-                    style: textStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 16)),
-                const Spacer(),
-                Text('Tap to view profile',
-                    style: textStyle.copyWith(color: Colors.grey, fontSize: 12)),
-              ],
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE8E8E8)),
             ),
-            const SizedBox(height: 10),
-            Row(
+            padding: const EdgeInsets.all(12),
+            child: Column(
               children: [
-                _AvatarCircle(initials: _initials(user.fullName)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user.fullName,
-                        overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline, color: kTextMain),
+                    const SizedBox(width: 8),
+                    Text('Profile',
+                        style: textStyle.copyWith(
+                            fontWeight: FontWeight.w600, fontSize: 16)),
+                    const Spacer(),
+                    Text('Tap to view profile',
                         style:
-                            textStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 15),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Member since ${_formatMonthYear(user.memberSince)}',
-                        style: textStyle.copyWith(fontSize: 12, color: Colors.black54),
-                      ),
-                    ],
-                  ),
+                            textStyle.copyWith(color: Colors.grey, fontSize: 12)),
+                  ],
                 ),
-                const Icon(Icons.chevron_right, color: Colors.black45),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    _AvatarCircle(initials: _initials(u.fullName)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            u.fullName,
+                            overflow: TextOverflow.ellipsis,
+                            style: textStyle.copyWith(
+                                fontWeight: FontWeight.w600, fontSize: 15),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Member since ${_formatMonthYear(u.memberSince)}',
+                            style: textStyle.copyWith(
+                                fontSize: 12, color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right, color: Colors.black45),
+                  ],
+                ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -441,8 +484,18 @@ class _ProfileBox extends StatelessWidget {
 
   static String _formatMonthYear(DateTime d) {
     const months = [
-      'January','February','March','April','May','June',
-      'July','August','September','October','November','December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
     return '${months[d.month - 1]} ${d.year}';
   }
@@ -451,23 +504,10 @@ class _ProfileBox extends StatelessWidget {
 /// =======================
 /// Dialogs
 /// =======================
-class _ProfileDialog extends StatefulWidget {
+class _ProfileDialog extends StatelessWidget {
   final AppUser user;
   final SettingsActions actions;
   const _ProfileDialog({required this.user, required this.actions});
-
-  @override
-  State<_ProfileDialog> createState() => _ProfileDialogState();
-}
-
-class _ProfileDialogState extends State<_ProfileDialog> {
-  late AppUser _user;
-
-  @override
-  void initState() {
-    super.initState();
-    _user = widget.user;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -480,126 +520,163 @@ class _ProfileDialogState extends State<_ProfileDialog> {
         constraints: const BoxConstraints(maxWidth: 520),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
+          child: ValueListenableBuilder<AppUser?>(
+            valueListenable: ProfileSync.user,
+            builder: (context, synced, _) {
+              final u = synced ?? user;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Profile', style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 18)),
-                  const Spacer(),
-                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
-                ],
-              ),
-              const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text('Profile',
+                          style: ts.copyWith(
+                              fontWeight: FontWeight.w600, fontSize: 18)),
+                      const Spacer(),
+                      IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
 
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: kPrimaryDark,
-                child: Text(_initials(_user.fullName),
-                    style: ts.copyWith(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 22)),
-              ),
-              const SizedBox(height: 12),
-              Text(_user.fullName, style: ts.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
-              const SizedBox(height: 14),
+                  CircleAvatar(
+                    radius: 40,
+                    backgroundColor: kPrimaryDark,
+                    child: Text(_initials(u.fullName),
+                        style: ts.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 22)),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(u.fullName,
+                      style:
+                          ts.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
+                  const SizedBox(height: 14),
 
-              Container(
-                decoration: _cardDeco(),
-                padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
-                child: Column(
-                  children: [
-                    Row(
+                  Container(
+                    decoration: _cardDeco(),
+                    padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+                    child: Column(
                       children: [
-                        Text('Personal Information',
-                            style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const Spacer(),
-                        IconButton(
-                          tooltip: 'Edit',
-                          icon: const Icon(Icons.edit_outlined, size: 20),
-                          onPressed: () async {
-                            final edited = await showDialog<AppUser?>(
-                              context: context,
-                              barrierDismissible: false,
-                              builder: (_) => _EditProfileDialog(user: _user, actions: widget.actions),
-                            );
-                            if (edited != null && mounted) setState(() => _user = edited);
-                          },
-                        )
+                        Row(
+                          children: [
+                            Text('Personal Information',
+                                style: ts.copyWith(
+                                    fontWeight: FontWeight.w600, fontSize: 13)),
+                            const Spacer(),
+                            IconButton(
+                              tooltip: 'Edit',
+                              icon: const Icon(Icons.edit_outlined, size: 20),
+                              onPressed: () async {
+                                final edited = await showDialog<AppUser?>(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (_) => _EditProfileDialog(
+                                      user: u, actions: actions),
+                                );
+                                if (edited != null) {
+                                  // Already broadcasted inside save; pop just in case parent needs value
+                                  Navigator.pop(context, edited);
+                                }
+                              },
+                            )
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+
+                        _InfoRow(icon: Icons.email_outlined, text: u.email),
+
+                        if (u.phone != null) ...[
+                          const SizedBox(height: 8),
+                          _InfoRow(
+                              icon: Icons.phone_outlined, text: u.phone!),
+                        ],
+                        if (u.location != null) ...[
+                          const SizedBox(height: 8),
+                          _InfoRow(
+                              icon: Icons.location_on_outlined,
+                              text: u.location!),
+                        ],
+                        const SizedBox(height: 8),
+                        _InfoRow(
+                          icon: Icons.calendar_today_outlined,
+                          text: 'Member since ${_formatMonthYear(u.memberSince)}',
+                        ),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                  ),
+                  const SizedBox(height: 12),
 
-                    _InfoRow(icon: Icons.email_outlined, text: _user.email),
-
-                    if (_user.phone != null) ...[
-                      const SizedBox(height: 8),
-                      _InfoRow(icon: Icons.phone_outlined, text: _user.phone!),
-                    ],
-                    if (_user.location != null) ...[
-                      const SizedBox(height: 8),
-                      _InfoRow(icon: Icons.location_on_outlined, text: _user.location!),
-                    ],
-                    const SizedBox(height: 8),
-                    _InfoRow(
-                      icon: Icons.calendar_today_outlined,
-                      text: 'Member since ${_formatMonthYear(_user.memberSince)}',
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              Container(
-                width: double.infinity,
-                decoration: _cardDeco(),
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Security', style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 13)),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 42,
-                      child: OutlinedButton(
-                        style: kOutlinedBtnStyle.copyWith(
-                          minimumSize: const WidgetStatePropertyAll(Size.fromHeight(42)),
+                  Container(
+                    width: double.infinity,
+                    decoration: _cardDeco(),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Security',
+                            style: ts.copyWith(
+                                fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          height: 42,
+                          child: OutlinedButton(
+                            style: kOutlinedBtnStyle.copyWith(
+                              minimumSize: const WidgetStatePropertyAll(
+                                  Size.fromHeight(42)),
+                            ),
+                            onPressed: () async {
+                              await showDialog<void>(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) =>
+                                    _PasswordOnlyDialog(actions: actions),
+                              );
+                            },
+                            child: const Text('Manage Password'),
+                          ),
                         ),
-                        onPressed: () async {
-                          await showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => _PasswordOnlyDialog(actions: widget.actions),
-                          );
-                        },
-                        child: const Text('Manage Password'),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
     );
   }
 
-  String _initials(String name) {
+  static String _initials(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
     String take(String s) => s.isNotEmpty ? s[0].toUpperCase() : '';
     if (parts.length == 1) return take(parts[0]);
     return take(parts.first) + take(parts.last);
   }
 
-  BoxDecoration _cardDeco() => BoxDecoration(
+  static BoxDecoration _cardDeco() => BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE8E8E8)),
       );
 
-  String _formatMonthYear(DateTime d) {
+  static String _formatMonthYear(DateTime d) {
     const months = [
-      'January','February','March','April','May','June',
-      'July','August','September','October','November','December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
     return '${months[d.month - 1]} ${d.year}';
   }
@@ -680,11 +757,13 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                 Row(
                   children: [
                     Text('Edit Profile',
-                        style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 18)),
+                        style: ts.copyWith(
+                            fontWeight: FontWeight.w600, fontSize: 18)),
                     const Spacer(),
                     IconButton(
                         icon: const Icon(Icons.close),
-                        onPressed: _saving ? null : () => Navigator.pop(context)),
+                        onPressed:
+                            _saving ? null : () => Navigator.pop(context)),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -693,14 +772,18 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                   radius: 40,
                   backgroundColor: kPrimaryDark,
                   child: Text(_initials(_name.text),
-                      style: ts.copyWith(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 22)),
+                      style: ts.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 22)),
                 ),
 
                 const SizedBox(height: 10),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.email_outlined, size: 16, color: kTextMain),
+                    const Icon(Icons.email_outlined,
+                        size: 16, color: kTextMain),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -725,28 +808,34 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Personal Information',
-                          style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 13)),
+                          style: ts.copyWith(
+                              fontWeight: FontWeight.w600, fontSize: 13)),
                       const SizedBox(height: 8),
 
                       TextFormField(
                         controller: _name,
                         decoration: kInput('Full Name'),
                         textInputAction: TextInputAction.next,
-                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty)
+                                ? 'Required'
+                                : null,
                       ),
                       const SizedBox(height: 10),
 
                       TextFormField(
                         controller: _phone,
-                        decoration: kInput('Phone')
-                            .copyWith(prefixIcon: const Icon(Icons.phone_outlined)),
+                        decoration: kInput('Phone').copyWith(
+                            prefixIcon:
+                                const Icon(Icons.phone_outlined)),
                         keyboardType: TextInputType.phone,
                       ),
                       const SizedBox(height: 10),
                       TextFormField(
                         controller: _location,
                         decoration: kInput('Location').copyWith(
-                          prefixIcon: const Icon(Icons.location_on_outlined),
+                          prefixIcon:
+                              const Icon(Icons.location_on_outlined),
                         ),
                       ),
                     ],
@@ -767,7 +856,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
                     Expanded(
                       child: OutlinedButton(
                         style: kOutlinedBtnStyle,
-                        onPressed: _saving ? null : () => Navigator.pop(context, null),
+                        onPressed: _saving
+                            ? null
+                            : () => Navigator.pop(context, null),
                         child: const Text('Cancel'),
                       ),
                     ),
@@ -789,16 +880,32 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     if (!_form.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
-      final updated = await widget.actions.updateProfile(
+      // 1) Update on backend
+      final echoed = await widget.actions.updateProfile(
         fullName: _name.text.trim(),
         email: widget.user.email,
         phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
-        location: _location.text.trim().isEmpty ? null : _location.text.trim(),
+        location:
+            _location.text.trim().isEmpty ? null : _location.text.trim(),
       );
-      if (mounted) Navigator.pop(context, updated);
+
+      // 2) Re-fetch canonical user to ensure FRESH data (in case backend normalizes)
+      AppUser fresh;
+      try {
+        fresh = await widget.actions.loadMe();
+      } catch (_) {
+        // fallback to echoed if loadMe fails
+        fresh = echoed;
+      }
+
+      // 3) Broadcast to all tabs immediately
+      ProfileSync.set(fresh);
+
+      if (mounted) Navigator.pop(context, fresh);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(kSnack('Failed to save: $e'));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(kSnack('Failed to save: $e'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -837,8 +944,10 @@ class _UsernameOnlyDialogState extends State<_UsernameOnlyDialog> {
   Widget build(BuildContext context) {
     final ts = GoogleFonts.poppins();
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding:
+          const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
         child: Padding(
@@ -849,11 +958,13 @@ class _UsernameOnlyDialogState extends State<_UsernameOnlyDialog> {
               Row(
                 children: [
                   Text('Update Username',
-                      style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 18)),
+                      style: ts.copyWith(
+                          fontWeight: FontWeight.w600, fontSize: 18)),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.close),
-                    onPressed: _busy ? null : () => Navigator.pop(context),
+                    onPressed:
+                        _busy ? null : () => Navigator.pop(context),
                   ),
                 ],
               ),
@@ -865,18 +976,26 @@ class _UsernameOnlyDialogState extends State<_UsernameOnlyDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Change Username',
-                        style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 14)),
+                        style: ts.copyWith(
+                            fontWeight: FontWeight.w600, fontSize: 14)),
                     const SizedBox(height: 10),
-                    TextField(controller: _curUser, decoration: kInput('Current Username')),
+                    TextField(
+                        controller: _curUser,
+                        decoration: kInput('Current Username')),
                     const SizedBox(height: 10),
-                    TextField(controller: _newUser, decoration: kInput('New Username')),
+                    TextField(
+                        controller: _newUser,
+                        decoration: kInput('New Username')),
                   ],
                 ),
               ),
               const SizedBox(height: 10),
               _ReqCard(
                 title: 'Username Requirements:',
-                lines: const ['At least 8 characters long', 'Letters, numbers, and underscores only'],
+                lines: const [
+                  'At least 8 characters long',
+                  'Letters, numbers, and underscores only'
+                ],
               ),
               const SizedBox(height: 14),
               ElevatedButton(
@@ -884,10 +1003,11 @@ class _UsernameOnlyDialogState extends State<_UsernameOnlyDialog> {
                 onPressed: _busy ? null : _updateUsername,
                 child: const Text('Update Username'),
               ),
-              if (_busy) const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
+              if (_busy)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: LinearProgressIndicator(minHeight: 2),
+                ),
             ],
           ),
         ),
@@ -900,25 +1020,31 @@ class _UsernameOnlyDialogState extends State<_UsernameOnlyDialog> {
     final nxt = _newUser.text.trim();
 
     if (cur.isEmpty || nxt.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(kSnack('Please fill both fields.'));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(kSnack('Please fill both fields.'));
       return;
     }
-    if (nxt.length < 8 || !RegExp(r'^[A-Za-z0-9_]+$').hasMatch(nxt)) {
+    if (nxt.length < 8 ||
+        !RegExp(r'^[A-Za-z0-9_]+$').hasMatch(nxt)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        kSnack('New username must be 8+ chars, letters/numbers/underscores only.'),
+        kSnack(
+            'New username must be 8+ chars, letters/numbers/underscores only.'),
       );
       return;
     }
 
     setState(() => _busy = true);
     try {
-      await widget.actions.updateUsername(currentUsername: cur, newUsername: nxt);
+      await widget.actions.updateUsername(
+          currentUsername: cur, newUsername: nxt);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(kSnack('Username updated.'));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(kSnack('Username updated.'));
         Navigator.pop(context);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(kSnack('Failed to update username: $e'));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(kSnack('Failed to update username: $e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -954,8 +1080,10 @@ class _PasswordOnlyDialogState extends State<_PasswordOnlyDialog> {
   Widget build(BuildContext context) {
     final ts = GoogleFonts.poppins();
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding:
+          const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
         child: Padding(
@@ -966,11 +1094,13 @@ class _PasswordOnlyDialogState extends State<_PasswordOnlyDialog> {
               Row(
                 children: [
                   Text('Change Password',
-                      style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 18)),
+                      style: ts.copyWith(
+                          fontWeight: FontWeight.w600, fontSize: 18)),
                   const Spacer(),
                   IconButton(
                       icon: const Icon(Icons.close),
-                      onPressed: _busy ? null : () => Navigator.pop(context)),
+                      onPressed:
+                          _busy ? null : () => Navigator.pop(context)),
                 ],
               ),
               const SizedBox(height: 12),
@@ -981,15 +1111,20 @@ class _PasswordOnlyDialogState extends State<_PasswordOnlyDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Update your password',
-                        style: ts.copyWith(fontWeight: FontWeight.w600, fontSize: 14)),
+                        style: ts.copyWith(
+                            fontWeight: FontWeight.w600, fontSize: 14)),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _curPw,
                       obscureText: !_showCur,
-                      decoration: kInput('Enter your current password').copyWith(
+                      decoration:
+                          kInput('Enter your current password').copyWith(
                         suffixIcon: IconButton(
-                          icon: Icon(_showCur ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _showCur = !_showCur),
+                          icon: Icon(_showCur
+                              ? Icons.visibility_off
+                              : Icons.visibility),
+                          onPressed: () =>
+                              setState(() => _showCur = !_showCur),
                         ),
                       ),
                     ),
@@ -997,10 +1132,14 @@ class _PasswordOnlyDialogState extends State<_PasswordOnlyDialog> {
                     TextField(
                       controller: _newPw,
                       obscureText: !_showNew,
-                      decoration: kInput('Enter your new password').copyWith(
+                      decoration:
+                          kInput('Enter your new password').copyWith(
                         suffixIcon: IconButton(
-                          icon: Icon(_showNew ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _showNew = !_showNew),
+                          icon: Icon(_showNew
+                              ? Icons.visibility_off
+                              : Icons.visibility),
+                          onPressed: () =>
+                              setState(() => _showNew = !_showNew),
                         ),
                       ),
                     ),
@@ -1008,10 +1147,14 @@ class _PasswordOnlyDialogState extends State<_PasswordOnlyDialog> {
                     TextField(
                       controller: _confPw,
                       obscureText: !_showConf,
-                      decoration: kInput('Confirm your new password').copyWith(
+                      decoration:
+                          kInput('Confirm your new password').copyWith(
                         suffixIcon: IconButton(
-                          icon: Icon(_showConf ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _showConf = !_showConf),
+                          icon: Icon(_showConf
+                              ? Icons.visibility_off
+                              : Icons.visibility),
+                          onPressed: () =>
+                              setState(() => _showConf = !_showConf),
                         ),
                       ),
                     ),
@@ -1021,7 +1164,10 @@ class _PasswordOnlyDialogState extends State<_PasswordOnlyDialog> {
               const SizedBox(height: 10),
               _ReqCard(
                 title: 'Password Requirements:',
-                lines: const ['At least 8 characters long', 'Mix of letters, numbers, and special characters'],
+                lines: const [
+                  'At least 8 characters long',
+                  'Mix of letters, numbers, and special characters'
+                ],
               ),
               const SizedBox(height: 14),
               ElevatedButton(
@@ -1029,10 +1175,11 @@ class _PasswordOnlyDialogState extends State<_PasswordOnlyDialog> {
                 onPressed: _busy ? null : _updatePassword,
                 child: const Text('Update Password'),
               ),
-              if (_busy) const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
+              if (_busy)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: LinearProgressIndicator(minHeight: 2),
+                ),
             ],
           ),
         ),
@@ -1046,30 +1193,37 @@ class _PasswordOnlyDialogState extends State<_PasswordOnlyDialog> {
     final cfm = _confPw.text.trim();
 
     if (cur.isEmpty || nxt.isEmpty || cfm.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(kSnack('Please complete all fields.'));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(kSnack('Please complete all fields.'));
       return;
     }
     if (nxt.length < 8 ||
-        !RegExp(r'^(?=.*[A-Za-z])(?=.*\d|.*[^A-Za-z0-9]).{8,}$').hasMatch(nxt)) {
+        !RegExp(r'^(?=.*[A-Za-z])(?=.*\d|.*[^A-Za-z0-9]).{8,}$')
+            .hasMatch(nxt)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        kSnack('Password must be 8+ chars with letters and numbers/specials.'),
+        kSnack(
+            'Password must be 8+ chars with letters and numbers/specials.'),
       );
       return;
     }
     if (nxt != cfm) {
-      ScaffoldMessenger.of(context).showSnackBar(kSnack('Passwords do not match.'));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(kSnack('Passwords do not match.'));
       return;
     }
 
     setState(() => _busy = true);
     try {
-      await widget.actions.updatePassword(currentPassword: cur, newPassword: nxt);
+      await widget.actions.updatePassword(
+          currentPassword: cur, newPassword: nxt);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(kSnack('Password updated.'));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(kSnack('Password updated.'));
         Navigator.pop(context);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(kSnack('Failed to update password: $e'));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(kSnack('Failed to update password: $e'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1092,12 +1246,15 @@ class _ReqCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ts = GoogleFonts.poppins();
     return Container(
-      decoration: BoxDecoration(color: kReqCardBg, borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(
+          color: kReqCardBg, borderRadius: BorderRadius.circular(10)),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: ts.copyWith(fontWeight: FontWeight.w600, color: Colors.white)),
+          Text(title,
+              style: ts.copyWith(
+                  fontWeight: FontWeight.w600, color: Colors.white)),
           const SizedBox(height: 6),
           for (final l in lines)
             Row(
@@ -1105,9 +1262,12 @@ class _ReqCard extends StatelessWidget {
               children: [
                 const Padding(
                     padding: EdgeInsets.only(top: 7),
-                    child: Icon(Icons.circle, size: 6, color: Colors.white)),
+                    child:
+                        Icon(Icons.circle, size: 6, color: Colors.white)),
                 const SizedBox(width: 8),
-                Expanded(child: Text(l, style: ts.copyWith(color: Colors.white, height: 1.2))),
+                Expanded(
+                    child: Text(l,
+                        style: ts.copyWith(color: Colors.white, height: 1.2))),
               ],
             )
         ],
@@ -1127,7 +1287,9 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Icon(icon, color: Colors.orange[700]),
         const SizedBox(width: 8),
-        Text(title, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, color: kTextMain)),
+        Text(title,
+            style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600, color: kTextMain)),
       ],
     );
   }
@@ -1161,7 +1323,8 @@ class _AvatarCircle extends StatelessWidget {
       radius: 22,
       backgroundColor: kPrimaryDark,
       child: Text(initials,
-          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
+          style: GoogleFonts.poppins(
+              color: Colors.white, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -1196,7 +1359,8 @@ class LangTile extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: selected ? Colors.white : const Color(0xFFF5F5F5),
                 borderRadius: BorderRadius.circular(6),
@@ -1221,7 +1385,8 @@ class LangTile extends StatelessWidget {
                 ),
               ),
             ),
-            if (selected) const Icon(Icons.check_circle, color: Colors.white, size: 18),
+            if (selected)
+              const Icon(Icons.check_circle, color: Colors.white, size: 18),
           ],
         ),
       ),
@@ -1256,8 +1421,9 @@ class _PointsBar extends StatelessWidget {
       borderRadius: BorderRadius.circular(999),
       child: Container(
         height: 10,
-        decoration:
-            BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(999)),
+        decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(999)),
         child: Align(
           alignment: Alignment.centerLeft,
           child: FractionallySizedBox(
@@ -1281,7 +1447,10 @@ class _ErrorRetry extends StatelessWidget {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text(message, style: GoogleFonts.poppins(color: kTextMain)),
         const SizedBox(height: 8),
-        OutlinedButton(style: kOutlinedBtnStyle, onPressed: onRetry, child: const Text('Retry')),
+        OutlinedButton(
+            style: kOutlinedBtnStyle,
+            onPressed: onRetry,
+            child: const Text('Retry')),
       ]),
     );
   }
@@ -1308,17 +1477,22 @@ class _TermsPrivacyDialogState extends State<_TermsPrivacyDialog> {
     super.dispose();
   }
 
-  TextStyle get _title => GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16);
-  TextStyle get _sub => GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13);
+  TextStyle get _title =>
+      GoogleFonts.poppins(fontWeight: FontWeight.w700, fontSize: 16);
+  TextStyle get _sub =>
+      GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13);
   TextStyle get _p => GoogleFonts.poppins(height: 1.35, fontSize: 13);
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      insetPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 640),
+        constraints:
+            const BoxConstraints(maxWidth: 520, maxHeight: 640),
         child: Column(
           children: [
             // Header
@@ -1330,10 +1504,12 @@ class _TermsPrivacyDialogState extends State<_TermsPrivacyDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('LigtasCommute Terms and Privacy', style: _title),
+                        Text('LigtasCommute Terms and Privacy',
+                            style: _title),
                         const SizedBox(height: 2),
                         Text('Last Updated: June 17, 2025',
-                            style: GoogleFonts.poppins(color: Colors.black54, fontSize: 12)),
+                            style: GoogleFonts.poppins(
+                                color: Colors.black54, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -1377,7 +1553,8 @@ class _TermsPrivacyDialogState extends State<_TermsPrivacyDialog> {
                   if (_index == 0)
                     ElevatedButton(
                       style: kPrimaryBtnStyle.copyWith(
-                        minimumSize: const WidgetStatePropertyAll(Size(88, 44)),
+                        minimumSize:
+                            const WidgetStatePropertyAll(Size(88, 44)),
                       ),
                       onPressed: () => _page.nextPage(
                         duration: const Duration(milliseconds: 220),
@@ -1388,9 +1565,11 @@ class _TermsPrivacyDialogState extends State<_TermsPrivacyDialog> {
                   else
                     ElevatedButton(
                       style: kPrimaryBtnStyle.copyWith(
-                        minimumSize: const WidgetStatePropertyAll(Size(88, 44)),
+                        minimumSize:
+                            const WidgetStatePropertyAll(Size(88, 44)),
                       ),
-                      onPressed: _accepted ? () => Navigator.pop(context) : null,
+                      onPressed:
+                          _accepted ? () => Navigator.pop(context) : null,
                       child: const Text('OK'),
                     ),
                 ],
@@ -1408,14 +1587,18 @@ class _TermsPrivacyDialogState extends State<_TermsPrivacyDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Welcome to LigtasCommute! By using this app, you agree to the following terms and conditions. Please read them carefully before using our services.',
+          Text(
+              'Welcome to LigtasCommute! By using this app, you agree to the following terms and conditions. Please read them carefully before using our services.',
               style: _p),
           const SizedBox(height: 12),
-          _num('1. Acceptance of Terms',
+          _num(
+              '1. Acceptance of Terms',
               'By accessing or using LigtasCommute, you acknowledge that you have read, understood, and agree to these Terms and Conditions. If you do not agree with any part of these terms, please do not use the application.'),
-          _num('2. User Registration',
+          _num(
+              '2. User Registration',
               'To use some features, you need an account. Provide accurate info and keep it updated. You’re responsible for keeping your login details secure.'),
-          _num('3. Location and GPS Use',
+          _num(
+              '3. Location and GPS Use',
               'LigtasCommute uses GPS and mobile data to track your trip and send alerts. By using the app, you allow location access. If offline, your last known location may be sent via SMS to your emergency contacts.'),
           _num('4. QR Code Verification',
               'Scan the vehicle’s QR code before boarding. Always confirm the driver and vehicle match in person.'),
@@ -1430,13 +1613,17 @@ class _TermsPrivacyDialogState extends State<_TermsPrivacyDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _num('5. Safety & Emergency Features',
+          _num(
+              '5. Safety & Emergency Features',
               'You may use the emergency alert function when you feel unsafe. Misuse of this feature, including sending false alerts, may result in account suspension or other actions.'),
-          _num('6. Feedback & Reports',
+          _num(
+              '6. Feedback & Reports',
               'LigtasCommute allows you to report your commuting experience. By submitting feedback, you agree to use appropriate language and submit only honest, respectful reports.'),
-          _num('7. Privacy Policy',
+          _num(
+              '7. Privacy Policy',
               'We collect your name, contact number, GPS data, trip activity, and feedback to make the app work properly. Your data is stored securely and not shared with advertisers. You may request to update or delete your data anytime.'),
-          _num('8. Changes to Terms',
+          _num(
+              '8. Changes to Terms',
               'We may revise these terms at any time. Continued use after updates means you accept the new terms.'),
           const SizedBox(height: 10),
           Row(
@@ -1461,11 +1648,13 @@ class _TermsPrivacyDialogState extends State<_TermsPrivacyDialog> {
   Widget _num(String h, String b) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(h, style: _sub),
-        const SizedBox(height: 4),
-        Text(b, style: _p),
-      ]),
+      child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(h, style: _sub),
+            const SizedBox(height: 4),
+            Text(b, style: _p),
+          ]),
     );
   }
 }
@@ -1480,8 +1669,10 @@ class _HelpSupportDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final ts = GoogleFonts.poppins();
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      insetPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420, maxHeight: 620),
         child: Column(
@@ -1491,7 +1682,8 @@ class _HelpSupportDialog extends StatelessWidget {
               child: Row(
                 children: [
                   Text('Help & Support',
-                      style: ts.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
+                      style: ts.copyWith(
+                          fontWeight: FontWeight.w700, fontSize: 16)),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.close),
@@ -1503,7 +1695,8 @@ class _HelpSupportDialog extends StatelessWidget {
             const Divider(height: 1),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                padding:
+                    const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: Column(
                   children: [
                     _helpCard(
@@ -1530,7 +1723,8 @@ class _HelpSupportDialog extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+              padding:
+                  const EdgeInsets.fromLTRB(16, 8, 16, 14),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -1546,7 +1740,8 @@ class _HelpSupportDialog extends StatelessWidget {
     );
   }
 
-  Widget _helpCard(BuildContext context, {required String title, required List<String> items}) {
+  Widget _helpCard(BuildContext context,
+      {required String title, required List<String> items}) {
     final ts = GoogleFonts.poppins();
     return Container(
       width: double.infinity,
@@ -1554,25 +1749,36 @@ class _HelpSupportDialog extends StatelessWidget {
         color: Colors.white,
         border: Border.all(color: kBorderGray),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [BoxShadow(color: Color(0x1A000000), blurRadius: 2, offset: Offset(0, 1))],
+        boxShadow: const [
+          BoxShadow(
+              color: Color(0x1A000000), blurRadius: 2, offset: Offset(0, 1))
+        ],
       ),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: ts.copyWith(fontWeight: FontWeight.w700, fontSize: 14)),
+          Text(title,
+              style: ts.copyWith(
+                  fontWeight: FontWeight.w700, fontSize: 14)),
           const SizedBox(height: 8),
           for (final t in items)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 7),
-                  child: Icon(Icons.circle, size: 6, color: Colors.black54),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: Text(t, style: ts.copyWith(height: 1.35, fontSize: 13))),
-              ]),
+              child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 7),
+                      child: Icon(Icons.circle,
+                          size: 6, color: Colors.black54),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: Text(t,
+                            style: ts.copyWith(
+                                height: 1.35, fontSize: 13))),
+                  ]),
             ),
         ],
       ),
